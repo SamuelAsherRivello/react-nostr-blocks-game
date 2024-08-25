@@ -1,21 +1,21 @@
 import React from 'react';
 import Box from '@mui/material/Box';
-import { Cube, GameState } from './App';
+import { CubeData, GameState } from './App';
 import { ButtonGroup, Button, TextField, Typography } from '@mui/material';
 
 interface GameStateRendererProps {
   gameState: GameState;
-  onCubeClick: (cube: Cube) => void;
+  onCubeClick: (cube: CubeData) => void;
 }
 
-const GameStateRenderer: React.FC<GameStateRendererProps> = ({ gameState, onCubeClick }) => {
+const GameStateRenderer2D: React.FC<GameStateRendererProps> = ({ gameState, onCubeClick }) => {
   return (
     <Box flexDirection={'column'} display={'flex'} alignItems={'left'} justifyContent={'center'}>
       <Typography sx={{ marginBottom: 2 }}></Typography>
 
-      <Typography variant="caption">Game State Renderer</Typography>
+      <Typography variant="caption">Game State Renderer 2D</Typography>
       <ButtonGroup variant="contained" aria-label="outlined primary button group">
-        {gameState.cubes.map((cube, index) => (
+        {gameState.cubeDatas.map((cube, index) => (
           <Button key={index} disabled={!cube.isAvailable} onClick={() => onCubeClick(cube)} color="secondary">
             {cube.x}
           </Button>
@@ -26,4 +26,4 @@ const GameStateRenderer: React.FC<GameStateRendererProps> = ({ gameState, onCube
   );
 };
 
-export default GameStateRenderer;
+export default GameStateRenderer2D;

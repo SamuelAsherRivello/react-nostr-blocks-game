@@ -11,10 +11,11 @@ import { Subscription } from 'nostr-tools/lib/types/relay';
 import Button from '@mui/material/Button';
 import ContentArea from './ContentArea';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import GameStateRenderer from './GameStateRenderer';
+import GameStateRenderer2D from './GameStateRenderer2D';
 import React, { useState, useEffect, useRef } from 'react';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import GameStateRenderer3D from './GameStateRenderer3D';
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -50,7 +51,7 @@ declare global {
   }
 }
 
-export class Cube {
+export class CubeData {
   isAvailable: boolean = true;
   x: number = 0;
   y: number = 0;
@@ -61,14 +62,30 @@ export class Cube {
     this.z = z;
     this.isAvailable = isAvailable;
   }
+
+  public toJsonString(): string {
+    return JSON.stringify({ x: this.x, y: this.y, z: this.z, isAvailable: this.isAvailable });
+  }
+
+  public static fromJsonString(s: string): CubeData {
+    const obj = JSON.parse(s);
+    const cubeData = new CubeData(obj.x, obj.y, obj.z, obj.isAvailable);
+    return cubeData;
+  }
 }
 
 export class GameState {
-  moveIndex: number = 0;
-  cubes: Cube[] = [];
+  //
+  public static readonly GameId: string = '0001'; //Manually increment for new game
+  //
+  public static readonly RoundIndexMax: number = 10;
+  //
+  public roundIndexCurrent: number = 0;
+  public cubeDatas: CubeData[] = [];
+  //
   constructor() {
     //Fill with 10 cubes where x = index.
-    this.cubes = new Array(10).fill(null).map((_, index) => new Cube(index + 1, 1, 1, true));
+    this.cubeDatas = new Array(GameState.RoundIndexMax).fill(null).map((_, index) => new CubeData(index + 1, 1, 1, true));
   }
 }
 
@@ -423,15 +440,15 @@ const App: React.FC = () => {
             console.log('Game data received2:', gameDataString);
             //
             const gameData = JSON.parse(gameDataString);
-            const moveIndex: number = Number.parseInt(gameData['moveIndex']);
+            const roundIndexCurrent: number = Number.parseInt(gameData['roundIndexCurrent']);
             const x: number = Number.parseInt(gameData['x']);
             const y: number = Number.parseInt(gameData['y']);
             const z: number = Number.parseInt(gameData['z']);
 
-            gameState.moveIndex = moveIndex;
-            gameState.cubes.find((cube) => cube.x === x && cube.y === y && cube.z === z)!.isAvailable = false;
+            gameState.roundIndexCurrent = roundIndexCurrent;
+            gameState.cubeDatas.find((cube) => cube.x === x && cube.y === y && cube.z === z)!.isAvailable = false;
 
-            gameState.cubes.map((cube, index) => {
+            gameState.cubeDatas.map((cube, index) => {
               console.log(`cube [${index}]: ` + cube.isAvailable);
             });
             setGameState(gameState);
@@ -536,14 +553,14 @@ const App: React.FC = () => {
     // game world: relay hardcode
     // each player moves with their own public key......
     // send message with "pubkey: gamepublickey,"
-    console.log('gameState.moveIndex: ' + gameState.moveIndex + ' so next move is : ' + (gameState.moveIndex + 1));
-    const moveIndex = gameState.moveIndex + 1;
+    console.log('gameState.roundIndexCurrent: ' + gameState.roundIndexCurrent + ' and next : ' + (gameState.roundIndexCurrent + 1));
+    const roundIndexCurrent = gameState.roundIndexCurrent + 1;
     const x = Math.floor(Math.random() * 10);
     const y = Math.floor(Math.random() * 10);
     const z = Math.floor(Math.random() * 10);
-    const moveJson = JSON.stringify({ moveIndex, x, y, z });
+    const gameDataJson = JSON.stringify({ roundIndexCurrent: roundIndexCurrent, x, y, z });
 
-    setNextGameData(moveJson);
+    setNextGameData(gameDataJson);
   };
 
   const sendEventMessageAsync = async () => {
@@ -681,14 +698,14 @@ const App: React.FC = () => {
       localStorage.setItem(LocalStorageKeys.aboutSectionIsOpen, JSON.stringify(!aboutSectionIsOpen));
     }
   };
-  function onCubeClick(cube: Cube): void {
-    const moveIndex = gameState.moveIndex + 1;
+  function onCubeClick(cube: CubeData): void {
+    const roundIndexCurrent = gameState.roundIndexCurrent + 1;
     const x = cube.x;
     const y = cube.y;
     const z = cube.z;
-    const moveJson = JSON.stringify({ moveIndex, x, y, z });
-    console.log('Cube clicked:', moveJson);
-    setNextGameData(moveJson);
+    const gameDataJson = JSON.stringify({ roundIndexCurrent, x, y, z });
+    console.log('Cube clicked:', gameDataJson);
+    setNextGameData(gameDataJson);
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -924,7 +941,8 @@ const App: React.FC = () => {
                   </Typography>
                   .
                 </Typography>
-                <GameStateRenderer gameState={gameState} onCubeClick={onCubeClick} />
+                <GameStateRenderer2D gameState={gameState} onCubeClick={onCubeClick} />
+                <GameStateRenderer3D gameState={gameState} onCubeClick={onCubeClick} />
                 <TextField
                   label="New Game Data"
                   multiline={false}
