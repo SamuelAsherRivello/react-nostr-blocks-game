@@ -26,8 +26,19 @@ export class NostrCustomEventProcessor {
     return window!.nostr!.nip04!.encrypt(publicKey, message);
   }
 
+  public static async decryptWithNostrConnectAsync(message: string, publicKey: string): Promise<string> {
+    if (!NostrCustomEventProcessor.hasNostrConnect()) {
+      throw new Error('decryptAsync failed. NostrConnect is not supported in this browser.');
+    }
+    return window!.nostr!.nip04!.decrypt(publicKey, message);
+  }
+
   public static async encryptAsync(message: string, publicKey: string, privateKey: Uint8Array): Promise<string> {
     return nip04.encrypt(privateKey, publicKey, message);
+  }
+
+  public static async decryptAsync(message: string, publicKey: string, privateKey: Uint8Array): Promise<string> {
+    return nip04.decrypt(privateKey, publicKey, message);
   }
 
   public static signEventAsync(nostrCustomEvent: NostrCustomEvent): Promise<NostrCustomEvent> {

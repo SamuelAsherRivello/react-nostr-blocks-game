@@ -103,7 +103,7 @@ export class CubeDto {
 
 export class GameState {
   //
-  public static readonly GameId: string = '0002'; //Manually increment for new game
+  public static readonly GameId: string = '0003'; //Manually increment for new game
   //
   public static readonly RoundIndexMax: number = 10;
   //
@@ -389,6 +389,10 @@ const App: React.FC = () => {
     }
   };
 
+  const isIncomingEventIsEncrypted = (event: Event): boolean => {
+    return event.kind === 4;
+  };
+
   const isIncomingEventAGameData = (event: Event): boolean => {
     return event.tags.some((tag) => tag[0] === PlayerMoveDto.TagName);
   };
@@ -459,31 +463,57 @@ const App: React.FC = () => {
         },
       ],
       {
-        onevent(event) {
+        async onevent(event) {
+          if (isIncomingEventIsEncrypted(event)) {
+            console.log(event);
+
+            const isForMe = event.pubkey === nostrUser?.publicKey;
+
+            isForMe && console.log('Decrypted event is for me!');
+
+            let oldContent = event.content;
+            if (isForMe) {
+              if (isUsingNostrConnect) {
+                if (NostrCustomEventProcessor.hasNostrConnect()) {
+                  throw new Error('Nostr extension does not support NIP-04 encryption.');
+                }
+                event.content = await NostrCustomEventProcessor.decryptWithNostrConnectAsync(event.content, nostrUser!.publicKey);
+              } else if (nostrUser!.privateKey) {
+                event.content = await NostrCustomEventProcessor.decryptAsync(event.content, nostrUser!.publicKey, nostrUser!.privateKey);
+              } else {
+                throw new Error('Unable to encrypt message: No private key available.');
+              }
+
+              console.log('Decrypted:', oldContent, '->', event.content);
+            }
+          }
           //GAME
           if (isIncomingEventAGameData(event)) {
             const gameDataString = event.tags.find((tag) => tag[0] === PlayerMoveDto.TagName)![1];
-            console.log('Game data received1:', event);
-            console.log('Game data received2:', gameDataString);
-            //
-            const playermoveDto: PlayerMoveDto = PlayerMoveDto.fromJsonString(gameDataString);
 
-            if (playermoveDto.gameId === GameState.GameId) {
-              gameState.roundIndexCurrent = playermoveDto.roundIndexCurrent + 1;
+            try {
+              //
+              const playermoveDto: PlayerMoveDto = PlayerMoveDto.fromJsonString(gameDataString);
 
-              //set gameState.cubeDatas isAvailable to false
-              gameState.cubeDatas.map((cubeDto) => {
-                //Cubs are available by default on page load
-                //so ONLY change them as not when event says so
-                if (cubeDto.x === playermoveDto.cubeDto.x && cubeDto.y === playermoveDto.cubeDto.y && cubeDto.z === playermoveDto.cubeDto.z) {
-                  cubeDto.isAvailable = false;
-                }
-              });
+              if (playermoveDto.gameId === GameState.GameId) {
+                gameState.roundIndexCurrent = playermoveDto.roundIndexCurrent + 1;
 
-              gameState.cubeDatas.map((cube, index) => {
-                console.log(`cube [${index}]: ` + cube.isAvailable);
-              });
-              setGameState(gameState);
+                //set gameState.cubeDatas isAvailable to false
+                gameState.cubeDatas.map((cubeDto) => {
+                  //Cubs are available by default on page load
+                  //so ONLY change them as not when event says so
+                  if (cubeDto.x === playermoveDto.cubeDto.x && cubeDto.y === playermoveDto.cubeDto.y && cubeDto.z === playermoveDto.cubeDto.z) {
+                    cubeDto.isAvailable = false;
+                  }
+                });
+
+                gameState.cubeDatas.map((cube, index) => {
+                  console.log(`cube [${index}]: ` + cube.isAvailable);
+                });
+                setGameState(gameState);
+              }
+            } catch (error) {
+              console.error('Decryption??? Failed to parse game data:', error);
             }
           }
 
@@ -642,13 +672,15 @@ const App: React.FC = () => {
     try {
       let content: string = contentText;
       if (messageIsEncrypted) {
+        //In production, you use recipients info here
+        const recipientsPublicKey = nostrUser!.publicKey;
         if (isUsingNostrConnect) {
           if (NostrCustomEventProcessor.hasNostrConnect()) {
             throw new Error('Nostr extension does not support NIP-04 encryption.');
           }
-          content = await NostrCustomEventProcessor.encryptWithNostrConnectAsync(contentText, nostrUser!.publicKey);
+          content = await NostrCustomEventProcessor.encryptWithNostrConnectAsync(contentText, recipientsPublicKey);
         } else if (nostrUser!.privateKey) {
-          content = await NostrCustomEventProcessor.encryptAsync(contentText, nostrUser!.publicKey, nostrUser!.privateKey);
+          content = await NostrCustomEventProcessor.encryptAsync(contentText, recipientsPublicKey, nostrUser!.privateKey);
         } else {
           throw new Error('Unable to encrypt message: No private key available.');
         }
@@ -678,7 +710,6 @@ const App: React.FC = () => {
           nostrCustomEvent.content = content;
           //Always
           nostrCustomEvent.tags.push([PlayerMoveDto.TagName, content]);
-          console.log('nostrCustomEvent.tags: ' + nostrCustomEvent.tags.length);
           break;
         default:
           console.error('Unknown eventMode');
