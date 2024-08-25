@@ -12,7 +12,7 @@ import Button from '@mui/material/Button';
 import ContentArea from './ContentArea';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import GameStateRenderer2D from './GameStateRenderer2D';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import GameStateRenderer3D from './GameStateRenderer3D';
@@ -51,12 +51,39 @@ declare global {
   }
 }
 
-export class CubeData {
-  isAvailable: boolean = true;
+export class PlayerMoveDto {
+  //Don't parse
+  public static readonly TagName: string = 'playerMoveDto';
+  //Parse
+  gameId: string = GameState.GameId;
+  roundIndexCurrent: number = 0;
+  cubeDto: CubeDto = new CubeDto(0, 0, 0, false);
+  //
+  constructor() {}
+  public toJsonString(): string {
+    return JSON.stringify({ roundIndexCurrent: this.roundIndexCurrent, gameId: this.gameId, cubeData: this.cubeDto.toJsonString() });
+  }
+
+  public static fromJsonString(s: string): PlayerMoveDto {
+    const obj = JSON.parse(s);
+    const playerMoveDto = new PlayerMoveDto();
+    playerMoveDto.roundIndexCurrent = obj.roundIndexCurrent;
+    playerMoveDto.gameId = obj.gameId;
+    playerMoveDto.cubeDto = CubeDto.fromJsonString(obj.cubeData);
+    return playerMoveDto;
+  }
+}
+
+export class CubeDto {
+  //Parse
   x: number = 0;
   y: number = 0;
   z: number = 0;
-  constructor(x: number, y: number, z: number, isAvailable: boolean) {
+
+  //Do not parse
+  isAvailable: boolean = true;
+
+  constructor(x: number, y: number, z: number, isAvailable: boolean = true) {
     this.x = x;
     this.y = y;
     this.z = z;
@@ -64,35 +91,35 @@ export class CubeData {
   }
 
   public toJsonString(): string {
-    return JSON.stringify({ x: this.x, y: this.y, z: this.z, isAvailable: this.isAvailable });
+    return JSON.stringify({ x: this.x, y: this.y, z: this.z });
   }
 
-  public static fromJsonString(s: string): CubeData {
+  public static fromJsonString(s: string): CubeDto {
     const obj = JSON.parse(s);
-    const cubeData = new CubeData(obj.x, obj.y, obj.z, obj.isAvailable);
+    const cubeData = new CubeDto(obj.x, obj.y, obj.z);
     return cubeData;
   }
 }
 
 export class GameState {
   //
-  public static readonly GameId: string = '0001'; //Manually increment for new game
+  public static readonly GameId: string = '0002'; //Manually increment for new game
   //
   public static readonly RoundIndexMax: number = 10;
   //
   public roundIndexCurrent: number = 0;
-  public cubeDatas: CubeData[] = [];
+  public cubeDatas: CubeDto[] = [];
   //
   constructor() {
     //Fill with 10 cubes where x = index.
-    this.cubeDatas = new Array(GameState.RoundIndexMax).fill(null).map((_, index) => new CubeData(index + 1, 1, 1, true));
+    this.cubeDatas = new Array(GameState.RoundIndexMax).fill(null).map((_, index) => new CubeDto(index + 1, 1, 1, true));
   }
 }
 
 const enum EventMode {
-  Null,
-  Message,
-  GameData,
+  Null = 'Null',
+  Message = 'Message',
+  GameData = 'GameData',
 }
 
 const App: React.FC = () => {
@@ -132,7 +159,7 @@ const App: React.FC = () => {
   const [nextMessage, setNextMessage] = useState('');
 
   const [gameState, setGameState] = useState<GameState>(new GameState());
-  const [nextGameData, setNextGameData] = useState('');
+  const [nextPlayerMoveDto, setNextPlayerMoveDto] = useState<PlayerMoveDto | undefined>(new PlayerMoveDto());
   const [messagesIsFiltered, setMessagesIsFiltered] = useState<boolean>(() => {
     const stored = localStorage.getItem(LocalStorageKeys.messagesIsFiltered);
     return useLocalStorage && stored ? JSON.parse(stored) : false;
@@ -182,10 +209,10 @@ const App: React.FC = () => {
     return useLocalStorage && stored ? JSON.parse(stored) : true;
   });
 
-  const [eventMode, setEventMode] = useState<EventMode>(() => {
+  let eventMode = useMemo(() => {
     const stored = localStorage.getItem(LocalStorageKeys.eventMode);
-    return useLocalStorage && stored ? JSON.parse(stored) : EventMode.Message;
-  });
+    return stored ? stored : EventMode.Null;
+  }, []);
 
   /////////////////////////////////////////////////////////////////////////////
   //
@@ -363,7 +390,7 @@ const App: React.FC = () => {
   };
 
   const isIncomingEventAGameData = (event: Event): boolean => {
-    return event.tags.some((tag) => tag[0] === 'gameData');
+    return event.tags.some((tag) => tag[0] === PlayerMoveDto.TagName);
   };
 
   const isIncomingEventContentValid = (content: String): boolean => {
@@ -435,23 +462,29 @@ const App: React.FC = () => {
         onevent(event) {
           //GAME
           if (isIncomingEventAGameData(event)) {
-            const gameDataString = event.tags.find((tag) => tag[0] === 'gameData')![1];
+            const gameDataString = event.tags.find((tag) => tag[0] === PlayerMoveDto.TagName)![1];
             console.log('Game data received1:', event);
             console.log('Game data received2:', gameDataString);
             //
-            const gameData = JSON.parse(gameDataString);
-            const roundIndexCurrent: number = Number.parseInt(gameData['roundIndexCurrent']);
-            const x: number = Number.parseInt(gameData['x']);
-            const y: number = Number.parseInt(gameData['y']);
-            const z: number = Number.parseInt(gameData['z']);
+            const playermoveDto: PlayerMoveDto = PlayerMoveDto.fromJsonString(gameDataString);
 
-            gameState.roundIndexCurrent = roundIndexCurrent;
-            gameState.cubeDatas.find((cube) => cube.x === x && cube.y === y && cube.z === z)!.isAvailable = false;
+            if (playermoveDto.gameId === GameState.GameId) {
+              gameState.roundIndexCurrent = playermoveDto.roundIndexCurrent + 1;
 
-            gameState.cubeDatas.map((cube, index) => {
-              console.log(`cube [${index}]: ` + cube.isAvailable);
-            });
-            setGameState(gameState);
+              //set gameState.cubeDatas isAvailable to false
+              gameState.cubeDatas.map((cubeDto) => {
+                //Cubs are available by default on page load
+                //so ONLY change them as not when event says so
+                if (cubeDto.x === playermoveDto.cubeDto.x && cubeDto.y === playermoveDto.cubeDto.y && cubeDto.z === playermoveDto.cubeDto.z) {
+                  cubeDto.isAvailable = false;
+                }
+              });
+
+              gameState.cubeDatas.map((cube, index) => {
+                console.log(`cube [${index}]: ` + cube.isAvailable);
+              });
+              setGameState(gameState);
+            }
           }
 
           //MESSAGE (also send game stuff here for now)
@@ -532,7 +565,8 @@ const App: React.FC = () => {
 
   //TODO: this is not editable so,... needed?
   const handleGameDataNewInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setNextGameData(event.target.value);
+    const playerMoveDto: PlayerMoveDto = PlayerMoveDto.fromJsonString(event.target.value);
+    setNextPlayerMoveDto(playerMoveDto);
   };
 
   const randomizeMessage = async () => {
@@ -558,24 +592,33 @@ const App: React.FC = () => {
     const x = Math.floor(Math.random() * 10);
     const y = Math.floor(Math.random() * 10);
     const z = Math.floor(Math.random() * 10);
-    const gameDataJson = JSON.stringify({ roundIndexCurrent: roundIndexCurrent, x, y, z });
+    //
+    const playerMoveDto = new PlayerMoveDto();
+    playerMoveDto.roundIndexCurrent = roundIndexCurrent;
+    playerMoveDto.cubeDto = new CubeDto(x, y, z);
 
-    setNextGameData(gameDataJson);
+    setNextPlayerMoveDto(playerMoveDto);
   };
 
   const sendEventMessageAsync = async () => {
-    setEventMode(EventMode.Message);
+    eventMode = EventMode.Message;
     await sendEventAsync(nextMessage);
     setNextMessage('');
   };
 
   const sendEventGameDataAsync = async () => {
-    setEventMode(EventMode.GameData);
-    await sendEventAsync(nextGameData);
-    setNextGameData('');
+    eventMode = EventMode.GameData;
+
+    if (nextPlayerMoveDto) {
+      await sendEventAsync(nextPlayerMoveDto.toJsonString());
+    } else {
+      console.error('sendEventGameDataAsync failed. nextPlayerMoveDto is not set');
+    }
+
+    setNextPlayerMoveDto(undefined);
   };
 
-  const sendEventAsync = async (contentText) => {
+  const sendEventAsync = async (contentText: string) => {
     if (contentText.trim() === '') {
       console.error('contentText is not set');
       return;
@@ -597,8 +640,6 @@ const App: React.FC = () => {
     }
 
     try {
-      console.log(`Sending message to ${relayUrl}`);
-
       let content: string = contentText;
       if (messageIsEncrypted) {
         if (isUsingNostrConnect) {
@@ -636,7 +677,8 @@ const App: React.FC = () => {
           //TODO: Maybe send move as content or maybe as tag or both?
           nostrCustomEvent.content = content;
           //Always
-          nostrCustomEvent.tags.push(['gameData', content]);
+          nostrCustomEvent.tags.push([PlayerMoveDto.TagName, content]);
+          console.log('nostrCustomEvent.tags: ' + nostrCustomEvent.tags.length);
           break;
         default:
           console.error('Unknown eventMode');
@@ -659,6 +701,7 @@ const App: React.FC = () => {
         return;
       }
 
+      console.log(`Message send ${eventMode.toString()}, with tags ${nostrCustomEvent.tags.length} to ${relayUrl}`);
       await relay.publish(nostrCustomEvent);
       console.log('Message sent:', nostrCustomEvent);
 
@@ -698,14 +741,12 @@ const App: React.FC = () => {
       localStorage.setItem(LocalStorageKeys.aboutSectionIsOpen, JSON.stringify(!aboutSectionIsOpen));
     }
   };
-  function onCubeClick(cube: CubeData): void {
-    const roundIndexCurrent = gameState.roundIndexCurrent + 1;
-    const x = cube.x;
-    const y = cube.y;
-    const z = cube.z;
-    const gameDataJson = JSON.stringify({ roundIndexCurrent, x, y, z });
-    console.log('Cube clicked:', gameDataJson);
-    setNextGameData(gameDataJson);
+  function onCubeClick(cubeDto: CubeDto): void {
+    console.log('Cube clicked:', cubeDto);
+    const playerMoveDto = new PlayerMoveDto();
+    playerMoveDto.roundIndexCurrent = gameState.roundIndexCurrent + 1;
+    playerMoveDto.cubeDto = cubeDto;
+    setNextPlayerMoveDto(playerMoveDto);
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -778,7 +819,7 @@ const App: React.FC = () => {
                 <TextField
                   className="textField"
                   label="Public Key"
-                  value={nostrUser == undefined ? '' : nostrUser?.publicKey}
+                  value={nostrUser ? nostrUser.publicKey : ''}
                   fullWidth={true}
                   InputLabelProps={{
                     shrink: true,
@@ -946,9 +987,10 @@ const App: React.FC = () => {
                 <TextField
                   label="New Game Data"
                   multiline={false}
-                  value={nextGameData}
+                  value={nextPlayerMoveDto ? nextPlayerMoveDto.toJsonString() : ''}
                   onChange={handleGameDataNewInputChange}
                   fullWidth={true}
+                  inputProps={{ readOnly: true }}
                   variant="outlined"
                   margin="normal"
                 />
@@ -956,7 +998,7 @@ const App: React.FC = () => {
                   <ButtonGroup className="content-area-button-group">
                     <Tooltip title="Send Game Data">
                       <span>
-                        <Button variant="contained" color="primary" onClick={sendEventGameDataAsync} disabled={nextGameData.length == 0 || !nostrUser}>
+                        <Button variant="contained" color="primary" onClick={sendEventGameDataAsync} disabled={!nextPlayerMoveDto || !nostrUser}>
                           Send
                         </Button>
                       </span>
