@@ -23,6 +23,19 @@ import GameStateRenderer3D from './GameStateRenderer3D';
 //
 /////////////////////////////////////////////////////////////////////////////
 
+declare global {
+  interface Window {
+    nostr?: {
+      getPublicKey(): Promise<string>;
+      signEvent(event: Event): Promise<Event>;
+      nip04?: {
+        encrypt(pubkey: string, plaintext: string): Promise<string>;
+        decrypt(pubkey: string, ciphertext: string): Promise<string>;
+      };
+    };
+  }
+}
+
 const enum LocalStorageKeys {
   useLocalStorage = 'useLocalStorage',
   //
@@ -38,24 +51,12 @@ const enum LocalStorageKeys {
   messageIsEncrypted = 'messageIsEncrypted',
   relayUrl = 'relayUrl',
 }
-declare global {
-  interface Window {
-    nostr?: {
-      getPublicKey(): Promise<string>;
-      signEvent(event: Event): Promise<Event>;
-      nip04?: {
-        encrypt(pubkey: string, plaintext: string): Promise<string>;
-        decrypt(pubkey: string, ciphertext: string): Promise<string>;
-      };
-    };
-  }
-}
 
 export class PlayerMoveDto {
   //Don't parse
   public static readonly TagName: string = 'playerMoveDto';
   //Parse
-  gameId: string = GameState.GameId;
+  gameId: string = NostrBlocksBot.GameId;
   roundIndexCurrent: number = 0;
   cubeDto: CubeDto = new CubeDto(0, 0, 0, false);
   //
@@ -101,18 +102,19 @@ export class CubeDto {
   }
 }
 
-export class GameState {
-  //
+export class NostrBlocksBot {
   public static readonly GameId: string = '0003'; //Manually increment for new game
-  //
   public static readonly RoundIndexMax: number = 10;
+}
+
+export class GameState {
   //
   public roundIndexCurrent: number = 0;
   public cubeDatas: CubeDto[] = [];
   //
   constructor() {
     //Fill with 10 cubes where x = index.
-    this.cubeDatas = new Array(GameState.RoundIndexMax).fill(null).map((_, index) => new CubeDto(index + 1, 1, 1, true));
+    this.cubeDatas = new Array(NostrBlocksBot.RoundIndexMax).fill(null).map((_, index) => new CubeDto(index + 1, 1, 1, true));
   }
 }
 
@@ -495,7 +497,7 @@ const App: React.FC = () => {
               //
               const playermoveDto: PlayerMoveDto = PlayerMoveDto.fromJsonString(gameDataString);
 
-              if (playermoveDto.gameId === GameState.GameId) {
+              if (playermoveDto.gameId === NostrBlocksBot.GameId) {
                 gameState.roundIndexCurrent = playermoveDto.roundIndexCurrent + 1;
 
                 //set gameState.cubeDatas isAvailable to false
